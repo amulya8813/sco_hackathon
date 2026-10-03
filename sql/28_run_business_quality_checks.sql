@@ -1,0 +1,209 @@
+--------------------------------------------------------------------------------
+-- Data Quality Framework — Business Quality Checks
+-- 28_run_business_quality_checks.sql
+--
+-- Inserts results into SCO_GOVERNANCE.DQ_CHECK_RESULT.
+-- Idempotent: TRUNCATE + re-insert pattern for repeatable runs.
+--------------------------------------------------------------------------------
+USE SCHEMA SCO_HACKATHON.SCO_GOVERNANCE;
+
+-- Clear previous run results (idempotent re-run)
+DELETE FROM DQ_CHECK_RESULT WHERE QUALITY_DIMENSION IN (
+    'Completeness','Uniqueness','Referential Integrity','Business Rules','Freshness','Validity'
+);
+
+-- ═══════════════════════════════════════════════════════════════════════
+-- A. FRESHNESS — from existing V_DQ_FRESHNESS
+-- ═══════════════════════════════════════════════════════════════════════
+INSERT INTO DQ_CHECK_RESULT (CHECK_NAME, QUALITY_DIMENSION, LAYER_NAME, OBJECT_NAME,
+    OBSERVED_VALUE, EXPECTED_CONDITION, PASSED_FLAG, SEVERITY, DETAILS,
+    REMEDIATION_GUIDANCE, SOURCE_OBJECT, ALERT_ELIGIBLE_FLAG)
+SELECT
+    'FRESHNESS:' || TABLE_NAME, 'Freshness', 'SOURCE', TABLE_NAME,
+    HOURS_STALE, 'hours_stale <= ' || SLA_HOURS,
+    STATUS = 'FRESH', IFF(STATUS='FRESH','LOW','HIGH'),
+    'Last updated: ' || COALESCE(LAST_UPDATED_AT::VARCHAR, 'UNKNOWN') || ', stale: ' || HOURS_STALE || 'h, SLA: ' || SLA_HOURS || 'h',
+    'Check pipeline schedule and Dynamic Table refresh status',
+    'SCO_GOVERNANCE.V_DQ_FRESHNESS', TRUE
+FROM V_DQ_FRESHNESS;
+
+-- ═══════════════════════════════════════════════════════════════════════
+-- B. COMPLETENESS — from existing V_DQ_COMPLETENESS
+-- ═══════════════════════════════════════════════════════════════════════
+INSERT INTO DQ_CHECK_RESULT (CHECK_NAME, QUALITY_DIMENSION, LAYER_NAME, OBJECT_NAME,
+    COLUMN_NAME, OBSERVED_VALUE, EXPECTED_CONDITION, PASSED_FLAG, SEVERITY, DETAILS,
+    REMEDIATION_GUIDANCE, SOURCE_OBJECT, ALERT_ELIGIBLE_FLAG)
+SELECT
+    'COMPLETENESS:' || TABLE_NAME || '.' || COLUMN_NAME, 'Completeness', 'SOURCE', TABLE_NAME,
+    COLUMN_NAME, NULL_ROWS, 'null_rows = 0',
+    NULL_ROWS = 0, IFF(NULL_ROWS = 0, 'LOW', 'MEDIUM'),
+    NULL_ROWS || ' NULL rows out of ' || TOTAL_ROWS || ' (' || NULL_PCT || '%)',
+    'Investigate source system for missing required values',
+    'SCO_GOVERNANCE.V_DQ_COMPLETENESS', TRUE
+FROM V_DQ_COMPLETENESS;
+
+-- ═══════════════════════════════════════════════════════════════════════
+-- C. UNIQUENESS — from existing V_DQ_UNIQUENESS
+-- ═══════════════════════════════════════════════════════════════════════
+INSERT INTO DQ_CHECK_RESULT (CHECK_NAME, QUALITY_DIMENSION, LAYER_NAME, OBJECT_NAME,
+    COLUMN_NAME, OBSERVED_VALUE, EXPECTED_CONDITION, PASSED_FLAG, SEVERITY, DETAILS,
+    REMEDIATION_GUIDANCE, SOURCE_OBJECT, ALERT_ELIGIBLE_FLAG)
+SELECT
+    'UNIQUENESS:' || TABLE_NAME || '.' || KEY_NAME, 'Uniqueness', 'SOURCE', TABLE_NAME,
+    KEY_NAME, DUPLICATE_ROWS, 'duplicate_rows = 0',
+    DUPLICATE_ROWS = 0, IFF(DUPLICATE_ROWS = 0, 'LOW', 'CRITICAL'),
+    DUPLICATE_ROWS || ' duplicate rows for key ' || KEY_NAME,
+    'Investigate source system for duplicate business keys; check CDC dedup',
+    'SCO_GOVERNANCE.V_DQ_UNIQUENESS', TRUE
+FROM V_DQ_UNIQUENESS;
+
+-- ═══════════════════════════════════════════════════════════════════════
+-- D. REFERENTIAL INTEGRITY — from existing V_DQ_REFERENTIAL_INTEGRITY
+-- ═══════════════════════════════════════════════════════════════════════
+INSERT INTO DQ_CHECK_RESULT (CHECK_NAME, QUALITY_DIMENSION, LAYER_NAME, OBJECT_NAME,
+    OBSERVED_VALUE, EXPECTED_CONDITION, PASSED_FLAG, SEVERITY, DETAILS,
+    REMEDIATION_GUIDANCE, SOURCE_OBJECT, ALERT_ELIGIBLE_FLAG)
+SELECT
+    'RI:' || RELATIONSHIP, 'Referential Integrity', 'SOURCE',
+    SPLIT_PART(RELATIONSHIP, '.', 1), ORPHAN_ROWS, 'orphan_rows = 0',
+    ORPHAN_ROWS = 0, IFF(ORPHAN_ROWS = 0, 'LOW', 'HIGH'),
+    ORPHAN_ROWS || ' orphan rows in ' || RELATIONSHIP,
+    'Check parent table for missing records; verify FK data load order',
+    'SCO_GOVERNANCE.V_DQ_REFERENTIAL_INTEGRITY', TRUE
+FROM V_DQ_REFERENTIAL_INTEGRITY;
+
+-- ═══════════════════════════════════════════════════════════════════════
+-- E. BUSINESS RULES — from existing V_DQ_BUSINESS_RULES
+-- ═══════════════════════════════════════════════════════════════════════
+INSERT INTO DQ_CHECK_RESULT (CHECK_NAME, QUALITY_DIMENSION, LAYER_NAME, OBJECT_NAME,
+    OBSERVED_VALUE, EXPECTED_CONDITION, PASSED_FLAG, SEVERITY, DETAILS,
+    REMEDIATION_GUIDANCE, SOURCE_OBJECT, ALERT_ELIGIBLE_FLAG)
+SELECT
+    'RULE:' || RULE_NAME, 'Business Rules', 'SOURCE', RULE_NAME,
+    VIOLATION_ROWS, 'violation_rows = 0',
+    VIOLATION_ROWS = 0, IFF(VIOLATION_ROWS = 0, 'LOW', 'HIGH'),
+    VIOLATION_ROWS || ' violations for rule: ' || RULE_NAME,
+    'Review business rule logic and source data for violations',
+    'SCO_GOVERNANCE.V_DQ_BUSINESS_RULES', TRUE
+FROM V_DQ_BUSINESS_RULES;
+
+-- ═══════════════════════════════════════════════════════════════════════
+-- F. VALIDITY — Gold layer value range checks
+-- ═══════════════════════════════════════════════════════════════════════
+-- F1: OTD rate 0-100
+INSERT INTO DQ_CHECK_RESULT (CHECK_NAME, QUALITY_DIMENSION, LAYER_NAME, OBJECT_NAME,
+    COLUMN_NAME, OBSERVED_VALUE, EXPECTED_CONDITION, PASSED_FLAG, SEVERITY, DETAILS,
+    REMEDIATION_GUIDANCE, SOURCE_OBJECT, ALERT_ELIGIBLE_FLAG)
+SELECT 'VALIDITY:GLD_METRIC_OTD.ON_TIME_DELIVERY_RATE_PCT', 'Validity', 'GOLD', 'GLD_METRIC_OTD',
+    'ON_TIME_DELIVERY_RATE_PCT',
+    COUNT_IF(ON_TIME_DELIVERY_RATE_PCT < 0 OR ON_TIME_DELIVERY_RATE_PCT > 100),
+    'values in [0,100]',
+    COUNT_IF(ON_TIME_DELIVERY_RATE_PCT < 0 OR ON_TIME_DELIVERY_RATE_PCT > 100) = 0,
+    'HIGH',
+    COUNT_IF(ON_TIME_DELIVERY_RATE_PCT < 0 OR ON_TIME_DELIVERY_RATE_PCT > 100) || ' out-of-range rows',
+    'Check OTD calculation logic for edge cases',
+    'SCO_GOLD.GLD_METRIC_OTD', TRUE
+FROM SCO_HACKATHON.SCO_GOLD.GLD_METRIC_OTD;
+
+-- F2: Fill rate 0-100
+INSERT INTO DQ_CHECK_RESULT (CHECK_NAME, QUALITY_DIMENSION, LAYER_NAME, OBJECT_NAME,
+    COLUMN_NAME, OBSERVED_VALUE, EXPECTED_CONDITION, PASSED_FLAG, SEVERITY, DETAILS,
+    REMEDIATION_GUIDANCE, SOURCE_OBJECT, ALERT_ELIGIBLE_FLAG)
+SELECT 'VALIDITY:GLD_METRIC_FILL_RATE.FILL_RATE_PCT', 'Validity', 'GOLD', 'GLD_METRIC_FILL_RATE',
+    'FILL_RATE_PCT',
+    COUNT_IF(FILL_RATE_PCT < 0 OR FILL_RATE_PCT > 100),
+    'values in [0,100]',
+    COUNT_IF(FILL_RATE_PCT < 0 OR FILL_RATE_PCT > 100) = 0,
+    'HIGH',
+    COUNT_IF(FILL_RATE_PCT < 0 OR FILL_RATE_PCT > 100) || ' out-of-range rows',
+    'Check fill rate calculation for edge cases',
+    'SCO_GOLD.GLD_METRIC_FILL_RATE', TRUE
+FROM SCO_HACKATHON.SCO_GOLD.GLD_METRIC_FILL_RATE;
+
+-- F3: Risk scores 0-100
+INSERT INTO DQ_CHECK_RESULT (CHECK_NAME, QUALITY_DIMENSION, LAYER_NAME, OBJECT_NAME,
+    COLUMN_NAME, OBSERVED_VALUE, EXPECTED_CONDITION, PASSED_FLAG, SEVERITY, DETAILS,
+    REMEDIATION_GUIDANCE, SOURCE_OBJECT, ALERT_ELIGIBLE_FLAG)
+SELECT 'VALIDITY:GLD_RISK_EXPOSURE.RISK_SCORE', 'Validity', 'GOLD', 'GLD_RISK_EXPOSURE',
+    'RISK_SCORE',
+    COUNT_IF(RISK_SCORE < 0 OR RISK_SCORE > 100),
+    'values in [0,100]',
+    COUNT_IF(RISK_SCORE < 0 OR RISK_SCORE > 100) = 0,
+    'HIGH',
+    COUNT_IF(RISK_SCORE < 0 OR RISK_SCORE > 100) || ' out-of-range rows',
+    'Check risk score calculation',
+    'SCO_GOLD.GLD_RISK_EXPOSURE', TRUE
+FROM SCO_HACKATHON.SCO_GOLD.GLD_RISK_EXPOSURE;
+
+-- F4: Non-negative quantities in inventory
+INSERT INTO DQ_CHECK_RESULT (CHECK_NAME, QUALITY_DIMENSION, LAYER_NAME, OBJECT_NAME,
+    COLUMN_NAME, OBSERVED_VALUE, EXPECTED_CONDITION, PASSED_FLAG, SEVERITY, DETAILS,
+    REMEDIATION_GUIDANCE, SOURCE_OBJECT, ALERT_ELIGIBLE_FLAG)
+SELECT 'VALIDITY:GLD_INVENTORY_HEALTH.QUANTITY_ON_HAND', 'Validity', 'GOLD', 'GLD_INVENTORY_HEALTH',
+    'QUANTITY_ON_HAND',
+    COUNT_IF(QUANTITY_ON_HAND < 0),
+    'quantity_on_hand >= 0',
+    COUNT_IF(QUANTITY_ON_HAND < 0) = 0,
+    'HIGH',
+    COUNT_IF(QUANTITY_ON_HAND < 0) || ' negative inventory rows',
+    'Check inventory calculation and source data',
+    'SCO_GOLD.GLD_INVENTORY_HEALTH', TRUE
+FROM SCO_HACKATHON.SCO_GOLD.GLD_INVENTORY_HEALTH;
+
+-- F5: Non-negative demand
+INSERT INTO DQ_CHECK_RESULT (CHECK_NAME, QUALITY_DIMENSION, LAYER_NAME, OBJECT_NAME,
+    COLUMN_NAME, OBSERVED_VALUE, EXPECTED_CONDITION, PASSED_FLAG, SEVERITY, DETAILS,
+    REMEDIATION_GUIDANCE, SOURCE_OBJECT, ALERT_ELIGIBLE_FLAG)
+SELECT 'VALIDITY:GLD_DEMAND_HISTORY.TOTAL_QUANTITY', 'Validity', 'GOLD', 'GLD_DEMAND_HISTORY',
+    'TOTAL_QUANTITY',
+    COUNT_IF(TOTAL_QUANTITY < 0),
+    'total_quantity >= 0',
+    COUNT_IF(TOTAL_QUANTITY < 0) = 0,
+    'MEDIUM',
+    COUNT_IF(TOTAL_QUANTITY < 0) || ' negative demand rows',
+    'Check demand aggregation logic',
+    'SCO_GOLD.GLD_DEMAND_HISTORY', TRUE
+FROM SCO_HACKATHON.SCO_GOLD.GLD_DEMAND_HISTORY;
+
+-- F6: Shipment on-time rate 0-100
+INSERT INTO DQ_CHECK_RESULT (CHECK_NAME, QUALITY_DIMENSION, LAYER_NAME, OBJECT_NAME,
+    COLUMN_NAME, OBSERVED_VALUE, EXPECTED_CONDITION, PASSED_FLAG, SEVERITY, DETAILS,
+    REMEDIATION_GUIDANCE, SOURCE_OBJECT, ALERT_ELIGIBLE_FLAG)
+SELECT 'VALIDITY:GLD_SHIPMENT_PERFORMANCE.ON_TIME_ARRIVAL_RATE_PCT', 'Validity', 'GOLD', 'GLD_SHIPMENT_PERFORMANCE',
+    'ON_TIME_ARRIVAL_RATE_PCT',
+    COUNT_IF(ON_TIME_ARRIVAL_RATE_PCT < 0 OR ON_TIME_ARRIVAL_RATE_PCT > 100),
+    'values in [0,100]',
+    COUNT_IF(ON_TIME_ARRIVAL_RATE_PCT < 0 OR ON_TIME_ARRIVAL_RATE_PCT > 100) = 0,
+    'HIGH',
+    COUNT_IF(ON_TIME_ARRIVAL_RATE_PCT < 0 OR ON_TIME_ARRIVAL_RATE_PCT > 100) || ' out-of-range rows',
+    'Check shipment on-time calculation',
+    'SCO_GOLD.GLD_SHIPMENT_PERFORMANCE', TRUE
+FROM SCO_HACKATHON.SCO_GOLD.GLD_SHIPMENT_PERFORMANCE;
+
+-- F7: Gold metric grain uniqueness — OTD
+INSERT INTO DQ_CHECK_RESULT (CHECK_NAME, QUALITY_DIMENSION, LAYER_NAME, OBJECT_NAME,
+    OBSERVED_VALUE, EXPECTED_CONDITION, PASSED_FLAG, SEVERITY, DETAILS,
+    REMEDIATION_GUIDANCE, SOURCE_OBJECT, ALERT_ELIGIBLE_FLAG)
+SELECT 'UNIQUENESS:GLD_METRIC_OTD grain', 'Uniqueness', 'GOLD', 'GLD_METRIC_OTD',
+    COUNT(*) - COUNT(DISTINCT MONTH_START_DATE || ':' || SUPPLIER_ID || ':' || CUSTOMER_REGION || ':' || PART_CATEGORY),
+    'no duplicate grains',
+    COUNT(*) = COUNT(DISTINCT MONTH_START_DATE || ':' || SUPPLIER_ID || ':' || CUSTOMER_REGION || ':' || PART_CATEGORY),
+    'CRITICAL',
+    (COUNT(*) - COUNT(DISTINCT MONTH_START_DATE || ':' || SUPPLIER_ID || ':' || CUSTOMER_REGION || ':' || PART_CATEGORY)) || ' duplicate grain rows',
+    'Check Gold OTD dynamic table or aggregation logic',
+    'SCO_GOLD.GLD_METRIC_OTD', TRUE
+FROM SCO_HACKATHON.SCO_GOLD.GLD_METRIC_OTD;
+
+-- F8: Gold metric grain uniqueness — Fill Rate
+INSERT INTO DQ_CHECK_RESULT (CHECK_NAME, QUALITY_DIMENSION, LAYER_NAME, OBJECT_NAME,
+    OBSERVED_VALUE, EXPECTED_CONDITION, PASSED_FLAG, SEVERITY, DETAILS,
+    REMEDIATION_GUIDANCE, SOURCE_OBJECT, ALERT_ELIGIBLE_FLAG)
+SELECT 'UNIQUENESS:GLD_METRIC_FILL_RATE grain', 'Uniqueness', 'GOLD', 'GLD_METRIC_FILL_RATE',
+    COUNT(*) - COUNT(DISTINCT MONTH_START_DATE || ':' || CUSTOMER_SERVICE_TIER || ':' || PART_CATEGORY || ':' || WAREHOUSE_ID),
+    'no duplicate grains',
+    COUNT(*) = COUNT(DISTINCT MONTH_START_DATE || ':' || CUSTOMER_SERVICE_TIER || ':' || PART_CATEGORY || ':' || WAREHOUSE_ID),
+    'CRITICAL',
+    (COUNT(*) - COUNT(DISTINCT MONTH_START_DATE || ':' || CUSTOMER_SERVICE_TIER || ':' || PART_CATEGORY || ':' || WAREHOUSE_ID)) || ' duplicate grain rows',
+    'Check Gold fill rate aggregation',
+    'SCO_GOLD.GLD_METRIC_FILL_RATE', TRUE
+FROM SCO_HACKATHON.SCO_GOLD.GLD_METRIC_FILL_RATE;

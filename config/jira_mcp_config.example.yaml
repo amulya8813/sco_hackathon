@@ -1,0 +1,63 @@
+# Jira MCP Configuration Template
+# config/jira_mcp_config.example.yaml
+#
+# Replace all placeholder values before enabling live mode.
+# Do NOT commit this file with real credentials.
+
+jira:
+  # MCP connection — configure via: cortex mcp add jira
+  mcp_server_name: "jira"
+  
+  # Project configuration
+  project_key: "PLACEHOLDER_PROJECT_KEY"    # e.g., "SCO" or "SUPPLY"
+  
+  # Issue type mapping by alert category
+  issue_types:
+    BUSINESS: "Bug"                         # or "Task", "Story" — depends on project
+    DATA_QUALITY: "Bug"
+  
+  # Priority mapping by severity
+  priority_mapping:
+    CRITICAL: "Highest"
+    HIGH: "High"
+    MEDIUM: "Medium"
+    LOW: "Low"
+  
+  # Labels applied to all SCO alerts
+  labels:
+    - "sco-hackathon"
+    - "coco-generated"
+    - "supply-chain"
+  
+  # Optional: assignee for auto-assignment
+  # default_assignee: "PLACEHOLDER_USER_ID"
+  
+  # Optional: custom fields
+  # custom_fields:
+  #   customfield_10001: "Supply Chain"     # Team/Component
+  #   customfield_10002: "SCO_HACKATHON"    # Source System
+
+alert_handler:
+  # DRY_RUN mode — set to false only when ready for production
+  dry_run: true
+  
+  # Maximum alerts to sync per run (rate limiting)
+  max_alerts_per_run: 50
+  
+  # Retry configuration
+  max_retries: 3
+  retry_delay_seconds: 30
+  
+  # Severity filter — only sync alerts at or above this level
+  min_severity: "MEDIUM"    # CRITICAL, HIGH, MEDIUM, LOW
+
+snowflake:
+  database: "SCO_HACKATHON"
+  schema: "SCO_MONITORING"
+  alert_table: "ALERT_EVENT"
+  sync_log_table: "JIRA_SYNC_LOG"
+  sync_queue_view: "V_JIRA_SYNC_QUEUE"
+
+streamlit:
+  # Dashboard URL for ticket links (replace with actual deployment URL)
+  dashboard_url: "PLACEHOLDER_STREAMLIT_URL"

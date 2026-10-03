@@ -1,0 +1,61 @@
+--------------------------------------------------------------------------------
+-- Supply Chain Ontology — Knowledge Graph: Integrity Tests
+-- tests/test_graph_integrity.sql
+--
+-- Assertion-style tests: each query should return 0 rows if passing.
+--------------------------------------------------------------------------------
+
+-- TEST 1: No orphan source edges
+SELECT 'FAIL: orphan source edge' AS TEST, e.EDGE_TYPE, COUNT(*) AS VIOLATIONS
+FROM SCO_HACKATHON.SCO_GRAPH.V_ALL_EDGES e
+LEFT JOIN SCO_HACKATHON.SCO_GRAPH.V_ALL_NODES n ON n.NODE_ID = e.SOURCE_NODE_ID
+WHERE n.NODE_ID IS NULL AND e.DIRECTION <> 'SELF'
+GROUP BY e.EDGE_TYPE;
+
+-- TEST 2: No orphan target edges
+SELECT 'FAIL: orphan target edge' AS TEST, e.EDGE_TYPE, COUNT(*) AS VIOLATIONS
+FROM SCO_HACKATHON.SCO_GRAPH.V_ALL_EDGES e
+LEFT JOIN SCO_HACKATHON.SCO_GRAPH.V_ALL_NODES n ON n.NODE_ID = e.TARGET_NODE_ID
+WHERE n.NODE_ID IS NULL AND e.DIRECTION <> 'SELF'
+GROUP BY e.EDGE_TYPE;
+
+-- TEST 3: No invalid node types
+SELECT 'FAIL: invalid node type' AS TEST, NODE_TYPE, COUNT(*) AS VIOLATIONS
+FROM SCO_HACKATHON.SCO_GRAPH.V_ALL_NODES
+WHERE NODE_TYPE NOT IN ('SUPPLIER','PART','PLANT','WAREHOUSE','CUSTOMER',
+    'CARRIER','ROUTE','PORT','COUNTRY','COMMODITY','ORDER','SHIPMENT','INVENTORY')
+GROUP BY NODE_TYPE;
+
+-- TEST 4: No duplicate edges (same source+target+type)
+SELECT 'FAIL: duplicate edge' AS TEST, EDGE_TYPE, COUNT(*) AS DUPLICATE_GROUPS
+FROM (
+    SELECT SOURCE_NODE_ID, TARGET_NODE_ID, EDGE_TYPE
+    FROM SCO_HACKATHON.SCO_GRAPH.V_ALL_EDGES
+    GROUP BY SOURCE_NODE_ID, TARGET_NODE_ID, EDGE_TYPE
+    HAVING COUNT(*) > 1
+) GROUP BY EDGE_TYPE;
+
+-- TEST 5: Polymorphic resolution complete (no UNKNOWN targets)
+SELECT 'FAIL: unresolved polymorphic' AS TEST, TARGET_TYPE, COUNT(*) AS VIOLATIONS
+FROM SCO_HACKATHON.SCO_GRAPH.V_EDGE_SHIPMENT_ORIGINATES_FROM
+WHERE TARGET_NODE_ID = 'UNKNOWN'
+GROUP BY TARGET_TYPE;
+
+-- TEST 6: All nodes have SOURCE_TABLE populated
+SELECT 'FAIL: missing source_table' AS TEST, NODE_TYPE, COUNT(*) AS VIOLATIONS
+FROM SCO_HACKATHON.SCO_GRAPH.V_ALL_NODES
+WHERE SOURCE_TABLE IS NULL
+GROUP BY NODE_TYPE;
+
+-- TEST 7: Node IDs are well-formed (TYPE:id pattern)
+SELECT 'FAIL: malformed node_id' AS TEST, NODE_TYPE, COUNT(*) AS VIOLATIONS
+FROM SCO_HACKATHON.SCO_GRAPH.V_ALL_NODES
+WHERE NODE_ID NOT LIKE NODE_TYPE || ':%'
+GROUP BY NODE_TYPE;
+
+-- TEST 8: Expected node type count = 13
+SELECT 'FAIL: unexpected node type count' AS TEST,
+    COUNT(DISTINCT NODE_TYPE) AS ACTUAL,
+    13 AS EXPECTED
+FROM SCO_HACKATHON.SCO_GRAPH.V_ALL_NODES
+HAVING COUNT(DISTINCT NODE_TYPE) <> 13;

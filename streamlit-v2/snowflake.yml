@@ -1,0 +1,31 @@
+# created-by: streamlit-in-workspaces; skill-version=1.0.0
+definition_version: 2
+entities:
+  streamlit_app:
+    type: streamlit
+    main_file: streamlit_app.py
+    artifacts:
+      - pyproject.toml
+      - streamlit_app.py
+      - .streamlit/config.toml
+      - app_pages/executive_overview.py
+      - app_pages/governed_metrics.py
+      - app_pages/conversational_analytics.py
+      - app_pages/forecasting.py
+      - app_pages/alerts_data_quality.py
+      - app_pages/ontology_explorer.py
+      - app_pages/knowledge_graph.py
+    identifier:
+      database: SCO_HACKATHON
+      schema: SCO_GOLD
+      name: STREAMLIT
+    title: SCO Supply Chain Analytics2
+    query_warehouse: COMPUTE_WH
+    compute_pool: SYSTEM_COMPUTE_POOL_CPU
+    run_mode: SpcsOnly
+    execute_as: OWNER
+    sharing:
+      - role: ACCOUNTADMIN
+        with_grant_option: true
+      - role: ORGADMIN
+        with_grant_option: true

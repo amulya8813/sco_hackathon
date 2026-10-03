@@ -1,0 +1,5 @@
+Fab4Coco built a governed Supply Chain Ontology with conversational analytics on Snowflake, entirely with CoCo CLI. Problem: OTD, Fill Rate, Days of Inventory and Landed Cost are computed differently by Procurement, Logistics, Finance and Sales, so nobody trusts the number and every question needs an analyst.
+
+Our MVP: a canonical Supplier-Part-Plant-Shipment-Order-Customer model as a Bronze-Silver-Gold medallion (Dynamic Tables, ~1.03M rows), a governed semantic view (SV_SUPPLY_CHAIN: 4 facts, 18 dimensions, 11 metrics with one sanctioned definition each), and Cortex Analyst turning plain-English questions into governed SQL. A 3-tab Streamlit app (Dashboard, Ask CoCo chat, Governance) delivers self-serve answers with the SQL, a chart and the definition attached.
+
+Verified: same 74.26% OTD for every persona, 42/42 data-quality checks pass, and an embedded demand-shock scenario surfaced in one question. CoCo drove all four phases: ontology, transformation, semantic view and the app.

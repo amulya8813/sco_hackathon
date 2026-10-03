@@ -1,0 +1,40 @@
+-- ============================================================================
+-- streamlit_supporting_views.sql
+-- No additional supporting views are required for the Streamlit application.
+-- All data sources already exist:
+--
+-- Gold metric tables (dynamic tables, already created):
+--   SCO_HACKATHON.SCO_GOLD.GLD_METRIC_OTD
+--   SCO_HACKATHON.SCO_GOLD.GLD_METRIC_FILL_RATE
+--   SCO_HACKATHON.SCO_GOLD.GLD_METRIC_DOI
+--   SCO_HACKATHON.SCO_GOLD.GLD_METRIC_LANDED_COST
+--   SCO_HACKATHON.SCO_GOLD.GLD_SUPPLIER_SCORECARD
+--   SCO_HACKATHON.SCO_GOLD.GLD_SHIPMENT_PERFORMANCE
+--   SCO_HACKATHON.SCO_GOLD.GLD_RISK_EXPOSURE
+--   SCO_HACKATHON.SCO_GOLD.GLD_INVENTORY_HEALTH
+--   SCO_HACKATHON.SCO_GOLD.GLD_DEMAND_HISTORY
+--   SCO_HACKATHON.SCO_GOLD.GLD_METRIC_DEFINITIONS
+--   SCO_HACKATHON.SCO_GOLD.GLD_PIPELINE_AUDIT
+--
+-- Governance views (already created):
+--   SCO_HACKATHON.SCO_GOVERNANCE.V_DQ_SCORECARD
+--   SCO_HACKATHON.SCO_GOVERNANCE.V_DQ_FRESHNESS
+--   SCO_HACKATHON.SCO_GOVERNANCE.V_DQ_COMPLETENESS
+--   SCO_HACKATHON.SCO_GOVERNANCE.V_DQ_UNIQUENESS
+--   SCO_HACKATHON.SCO_GOVERNANCE.V_DQ_REFERENTIAL_INTEGRITY
+--   SCO_HACKATHON.SCO_GOVERNANCE.V_DQ_BUSINESS_RULES
+--
+-- Semantic view:
+--   SCO_HACKATHON.SCO_GOLD.SV_SUPPLY_CHAIN
+--
+-- Alert:
+--   SCO_HACKATHON.SCO_GOVERNANCE.ALRT_DATA_QUALITY_FAILURE
+--
+-- Silver dimension tables (used by Ontology Explorer and Forecasting):
+--   SCO_HACKATHON.SCO_SILVER.SLV_DIM_PART (joined for part category in forecasting)
+--   All SLV_DIM_* tables (row counts in Ontology Explorer)
+-- ============================================================================
+
+-- Placeholder: if future features need materialized summaries, add them here.
+SELECT 'No additional views required' AS STATUS;
+
